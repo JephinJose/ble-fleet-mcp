@@ -103,7 +103,7 @@ class BleTransport:
             await client.connect()
         except BleakDeviceNotFoundError as exc:
             raise DeviceUnreachable(f"{device.address}: not found") from exc
-        except TimeoutError as exc:
+        except (TimeoutError, asyncio.TimeoutError) as exc:
             raise OperationTimeout(f"{device.address}: connect timed out") from exc
         except BleakError as exc:
             raise DeviceUnreachable(f"{device.address}: {exc}") from exc
@@ -118,7 +118,7 @@ class BleTransport:
         client: BleakClient = conn.handle
         try:
             data = await client.read_gatt_char(resource)
-        except TimeoutError as exc:
+        except (TimeoutError, asyncio.TimeoutError) as exc:
             raise OperationTimeout(f"{conn.device.address}: read {resource} timed out") from exc
         except BleakError as exc:
             raise DeviceUnreachable(
@@ -131,7 +131,7 @@ class BleTransport:
         payload = _encode(value)
         try:
             await client.write_gatt_char(resource, payload, response=True)
-        except TimeoutError as exc:
+        except (TimeoutError, asyncio.TimeoutError) as exc:
             raise OperationTimeout(f"{conn.device.address}: write {resource} timed out") from exc
         except BleakDeviceNotFoundError as exc:
             raise DeviceUnreachable(f"{conn.device.address}: not found") from exc

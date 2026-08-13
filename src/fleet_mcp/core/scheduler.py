@@ -62,7 +62,11 @@ TERMINAL_STATUSES = frozenset(
 
 # Failure classes worth retrying with backoff; WriteRejected is treated as deterministic
 # and is not retried (retrying an invalid write value won't change the outcome).
-_RETRYABLE = (DeviceUnreachable, OperationTimeout, TimeoutError)
+#
+# Use asyncio.TimeoutError explicitly rather than the builtin: they're the same class
+# on Python 3.11+, but asyncio.wait_for() raises a *distinct* asyncio.TimeoutError on
+# 3.10, which a bare `except TimeoutError` silently fails to catch there.
+_RETRYABLE = (DeviceUnreachable, OperationTimeout, asyncio.TimeoutError)
 
 
 @dataclass(slots=True)
@@ -252,7 +256,7 @@ class Scheduler:
         # handle the timeout path.
         try:
             await asyncio.wait_for(op.done_event.wait(), timeout=op.timeout_s)
-        except TimeoutError:
+        except asyncio.TimeoutError:
             if not op.running:
                 # _finish() already resolved every job right as the timeout fired.
                 return
@@ -273,7 +277,7 @@ class Scheduler:
         while not self._closed:
             job = await self._pick_job()
             if job is None:
-                with contextlib.suppress(TimeoutError):
+                with contextlib.suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(self._event.wait(), timeout=0.25)
                 self._event.clear()
                 continue
@@ -364,7 +368,7 @@ class Scheduler:
             else:
                 status = (
                     JobStatus.TIMEOUT
-                    if isinstance(exc, (OperationTimeout, TimeoutError))
+                    if isinstance(exc, (OperationTimeout, asyncio.TimeoutError))
                     else JobStatus.UNREACHABLE
                 )
                 self._finish(op, job, error=str(exc) or repr(exc), status=status)

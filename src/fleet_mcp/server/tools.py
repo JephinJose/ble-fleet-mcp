@@ -22,7 +22,9 @@ snappy without ever holding the MCP call open for a fleet-wide sweep."""
 
 
 async def _quick_wait(op: FleetOperation, quick_wait_s: float) -> None:
-    with contextlib.suppress(TimeoutError):
+    # asyncio.TimeoutError, not the builtin: they're unified on 3.11+ but distinct
+    # classes on 3.10, where asyncio.wait_for() only raises the former.
+    with contextlib.suppress(asyncio.TimeoutError):
         await asyncio.wait_for(op.done_event.wait(), timeout=quick_wait_s)
 
 
