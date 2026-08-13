@@ -10,6 +10,7 @@ error) rather than silently starving fleet_read/fleet_write of connections.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -63,6 +64,11 @@ class WatchManager:
         self._watches: dict[tuple[str, str], ResourceWatch] = {}
         self._held_connections: dict[str, Connection] = {}
         self._held_leases: dict[str, ConnectionPoolManager._Lease] = {}
+        # Guards the check-then-acquire sequence in subscribe()/unsubscribe(): without
+        # it, two concurrent subscribe() calls for the same not-yet-watched device
+        # could both see "not held yet" and each open their own connection to it,
+        # leaking one. Watch churn is rare, so serializing it costs nothing real.
+        self._lock = asyncio.Lock()
 
     @property
     def held_device_count(self) -> int:
@@ -76,40 +82,41 @@ class WatchManager:
         if key in self._watches:
             return
 
-        if device.address not in self._held_connections:
-            if (
-                self.held_device_count >= self._pool.max_connections
-                and device.address not in self._held_connections
-            ):
-                raise WatchCapacityExceeded(
-                    f"cannot watch {device.address}: {self.held_device_count} device(s) "
-                    f"already watched against a pool cap of {self._pool.max_connections}; "
-                    "unwatch a device first"
-                )
-            lease = self._pool.acquire(device)
-            conn = await lease.__aenter__()
-            self._held_connections[device.address] = conn
-            self._held_leases[device.address] = lease
+        async with self._lock:
+            if key in self._watches:
+                return
+            if device.address not in self._held_connections:
+                if self.held_device_count >= self._pool.max_connections:
+                    raise WatchCapacityExceeded(
+                        f"cannot watch {device.address}: {self.held_device_count} device(s) "
+                        f"already watched against a pool cap of {self._pool.max_connections}; "
+                        "unwatch a device first"
+                    )
+                lease = self._pool.acquire(device)
+                conn = await lease.__aenter__()
+                self._held_connections[device.address] = conn
+                self._held_leases[device.address] = lease
 
-        conn = self._held_connections[device.address]
-        watch = ResourceWatch(address=device.address, resource=resource, debounce_s=debounce_s)
-        self._watches[key] = watch
+            conn = self._held_connections[device.address]
+            watch = ResourceWatch(address=device.address, resource=resource, debounce_s=debounce_s)
+            self._watches[key] = watch
 
-        def _callback(reading: Reading) -> None:
-            watch.offer(reading)
+            def _callback(reading: Reading) -> None:
+                watch.offer(reading)
 
-        await self._transport.subscribe(conn, resource, _callback)
-        self._tracer.emit("watch.subscribe", address=device.address, resource=resource)
+            await self._transport.subscribe(conn, resource, _callback)
+            self._tracer.emit("watch.subscribe", address=device.address, resource=resource)
 
     async def unsubscribe(self, address: str, resource: str) -> None:
-        key = (address, resource)
-        self._watches.pop(key, None)
-        self._tracer.emit("watch.unsubscribe", address=address, resource=resource)
-        if not any(k[0] == address for k in self._watches):
-            lease = self._held_leases.pop(address, None)
-            self._held_connections.pop(address, None)
-            if lease is not None:
-                await lease.__aexit__(None, None, None)
+        async with self._lock:
+            key = (address, resource)
+            self._watches.pop(key, None)
+            self._tracer.emit("watch.unsubscribe", address=address, resource=resource)
+            if not any(k[0] == address for k in self._watches):
+                lease = self._held_leases.pop(address, None)
+                self._held_connections.pop(address, None)
+                if lease is not None:
+                    await lease.__aexit__(None, None, None)
 
     def poll(self, address: str, resource: str) -> list[WatchEntry]:
         watch = self._watches.get((address, resource))

@@ -144,6 +144,33 @@ async def test_operation_timeout_returns_partial_results() -> None:
 
 
 @pytest.mark.asyncio
+async def test_late_success_after_operation_timeout_does_not_overwrite_timeout_result() -> None:
+    """Regression test: a job that finishes just after the operation-level watchdog
+    force-times it out used to overwrite the already-reported TIMEOUT result back to
+    SUCCESS — the caller could observe op.status == "timed_out" while a per-device
+    result silently flipped to success behind its back. First resolution should win."""
+    transport = FakeTransport(max_concurrent=1)
+    # op_latency_s (~0.15s) is comfortably longer than the operation timeout (0.05s)
+    # but well inside the per-job device_timeout_s (5s), so the read genuinely
+    # completes *after* the operation has already been force-timed-out.
+    transport.add_peripheral(FakePeripheral(address="slow", resources={"r": 1}, op_latency_s=0.15))
+    pool = ConnectionPoolManager(transport, max_connections=1)
+    sched = Scheduler(pool, transport, device_timeout_s=5.0)
+
+    op = await sched.submit(_devices(transport, "slow"), JobKind.READ, "r", timeout_s=0.05)
+    await _wait_done(op)
+    assert op.status == "timed_out"
+    assert op.results["slow"].status == JobStatus.TIMEOUT
+
+    # Let the in-flight read actually finish and try to report back.
+    await asyncio.sleep(0.3)
+    assert op.results["slow"].status == JobStatus.TIMEOUT, (
+        "a late success must not overwrite the already-reported timeout"
+    )
+    await sched.stop()
+
+
+@pytest.mark.asyncio
 async def test_write_requires_verify_after_write_convergence() -> None:
     transport = FakeTransport(max_concurrent=1)
     transport.add_peripheral(FakePeripheral(address="d0", resources={"brightness": 0}))

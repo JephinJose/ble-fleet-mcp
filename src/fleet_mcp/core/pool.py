@@ -15,10 +15,6 @@ from fleet_mcp.core.tracing import Tracer
 from fleet_mcp.core.types import Connection, ConnState, DeviceHandle, Transport
 
 
-class PoolExhaustedError(Exception):
-    """Raised when no idle connection can be evicted to satisfy a new request."""
-
-
 @dataclass(frozen=True, slots=True)
 class PoolStatus:
     max_connections: int

@@ -388,6 +388,12 @@ class Scheduler:
         status: JobStatus | None = None,
     ) -> None:
         result = op.results[job.device.address]
+        if result.status in TERMINAL_STATUSES:
+            # Already resolved — e.g. the operation-level watchdog force-timed this
+            # job out right as it was about to complete on its own. First resolution
+            # wins rather than flip-flopping a result the caller may already be
+            # holding (via fleet_operation_status) back to a different terminal state.
+            return
         result.attempts = job.attempt
         result.finished_at = time.time()
         if outcome is not None:

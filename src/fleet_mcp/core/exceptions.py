@@ -17,14 +17,3 @@ class UnknownFleetError(FleetMCPError):
 
 class UnknownOperationError(FleetMCPError):
     pass
-
-
-class SafetyCriticalConfirmationRequired(FleetMCPError):
-    """Raised when a write batch includes a safety-critical device without explicit
-    per-device confirmation."""
-
-    def __init__(self, addresses: list[str]) -> None:
-        self.addresses = addresses
-        super().__init__(
-            f"Safety-critical device(s) require explicit confirmation before write: {addresses}"
-        )
