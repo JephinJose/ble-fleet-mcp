@@ -233,7 +233,7 @@ transport-specific — a new transport is a plugin, not a rewrite. See
 ## Development
 
 ```bash
-git clone https://github.com/fleet-mcp/ble-fleet-mcp.git
+git clone https://github.com/JephinJose/ble-fleet-mcp.git
 cd ble-fleet-mcp
 uv sync --extra dev
 uv run pre-commit install

@@ -54,5 +54,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Structured JSONL tracing of scheduler and pool events to `.fleet_mcp/traces/trace.jsonl`.
 - Simulated fleet test harness plus soak and chaos test suites.
 
-[Unreleased]: https://github.com/fleet-mcp/ble-fleet-mcp/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/fleet-mcp/ble-fleet-mcp/releases/tag/v0.1.0
+[Unreleased]: https://github.com/JephinJose/ble-fleet-mcp/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/JephinJose/ble-fleet-mcp/releases/tag/v0.1.0
