@@ -209,6 +209,32 @@ pool manager, scheduler, and circuit breaker: [docs/architecture.md](docs/archit
 | `FLEET_TRACE_ENABLED` | `1` | Structured JSONL tracing of pool/scheduler events. |
 | `FLEET_TRACE_PATH` | `.fleet_mcp/traces/trace.jsonl` | Where trace events are written. |
 | `FLEET_LOG_LEVEL` | `INFO` | Log level; logs always go to stderr so stdout stays clean for the MCP stdio transport. |
+| `FLEET_DASHBOARD_PORT` | unset (disabled) | Set to a port number to serve the web dashboard on that port. Off by default — see below. |
+| `FLEET_DASHBOARD_HOST` | `127.0.0.1` | Dashboard bind address. Localhost only unless you explicitly widen it — there's no authentication. |
+
+## Web dashboard
+
+A minimal, read-only dashboard over the same telemetry `fleet_pool_status`/`fleet_status`
+already expose: live connection pool gauges, per-device health, recent operations, and
+active watches. It's a stdlib `http.server` running in a background thread — no extra
+dependency, and it reads straight from the running server's in-memory state, so it's
+always exactly in sync.
+
+Off by default. Enable it by setting `FLEET_DASHBOARD_PORT`:
+
+```bash
+FLEET_DASHBOARD_PORT=8765 fleet-mcp
+# open http://127.0.0.1:8765
+```
+
+No hardware or MCP client needed to see it in action —
+[`examples/simulated_fleet/dashboard_demo.py`](examples/simulated_fleet/dashboard_demo.py)
+runs the dashboard against a lively simulated fleet:
+
+```bash
+uv run python examples/simulated_fleet/dashboard_demo.py --devices 30 --cap 4
+# open http://127.0.0.1:8765
+```
 
 ## Transports
 
@@ -226,8 +252,6 @@ transport-specific — a new transport is a plugin, not a rewrite. See
 
 - A second transport plugin (Zigbee or Thread) to prove the plugin interface
   generalizes beyond BLE.
-- A minimal web dashboard over the same telemetry `fleet_pool_status`/`fleet_status`
-  already expose.
 - A "fleet template" registry for shareable configs of common device populations.
 
 ## Development

@@ -182,6 +182,15 @@ def main() -> None:
     transport = BleTransport(max_connections=settings.max_connections)
     ctx = build_context(transport, transport_kind="ble", settings=settings)
     app = create_app(ctx)
+
+    if settings.dashboard_port is not None:
+        from fleet_mcp.server.dashboard import start_dashboard
+
+        start_dashboard(ctx, settings.dashboard_host, settings.dashboard_port)
+        logging.getLogger("fleet_mcp").info(
+            "dashboard: http://%s:%d", settings.dashboard_host, settings.dashboard_port
+        )
+
     app.run()
 
 

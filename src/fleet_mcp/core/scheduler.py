@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -164,6 +165,7 @@ class Scheduler:
         backoff_multiplier: float = 2.0,
         max_attempts: int = 3,
         tracer: Tracer | None = None,
+        max_operation_history: int = 500,
     ) -> None:
         self._pool = pool
         self._transport = transport
@@ -174,11 +176,16 @@ class Scheduler:
         self._backoff_multiplier = backoff_multiplier
         self._max_attempts = max_attempts
         self._tracer = tracer or NullTracer()
+        self._max_operation_history = max_operation_history
 
         self._pending: list[Job] = []
         self._lock = asyncio.Lock()
         self._event = asyncio.Event()
-        self._operations: dict[str, FleetOperation] = {}
+        # Insertion-ordered so pruning can drop the oldest *completed* operations
+        # first without scanning the whole history — a long-running server would
+        # otherwise accumulate FleetOperation objects (and their per-device results)
+        # forever, one per fleet_read/fleet_write call.
+        self._operations: OrderedDict[str, FleetOperation] = OrderedDict()
         self._workers: list[asyncio.Task[None]] = []
         self._background_tasks: set[asyncio.Task[None]] = set()
         self._closed = False
@@ -186,6 +193,19 @@ class Scheduler:
     @property
     def circuit_breaker(self) -> CircuitBreaker:
         return self._cb
+
+    def list_operations(self) -> list[FleetOperation]:
+        """Most-recently-submitted operations first, bounded by max_operation_history."""
+        return list(reversed(self._operations.values()))
+
+    def _prune_operation_history(self) -> None:
+        while len(self._operations) > self._max_operation_history:
+            for op_id, op in self._operations.items():
+                if not op.running:
+                    del self._operations[op_id]
+                    break
+            else:
+                break  # every tracked operation is still running; nothing safe to drop
 
     async def start(self) -> None:
         if self._workers:
@@ -237,6 +257,7 @@ class Scheduler:
             op_id=op_id, jobs=jobs, results=results, total=len(jobs), timeout_s=timeout_s
         )
         self._operations[op_id] = op
+        self._prune_operation_history()
 
         async with self._lock:
             self._pending.extend(jobs.values())

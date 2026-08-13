@@ -168,3 +168,30 @@ It's on by default and never touches stdout — set `FLEET_TRACE_ENABLED=0` to d
 `fleet_pool_status` and `fleet_status` expose the same underlying state synchronously,
 as the live-debugging surface for a human (or the agent) without needing to tail the
 trace file.
+
+## Web dashboard
+
+[`fleet_mcp/server/dashboard.py`](../src/fleet_mcp/server/dashboard.py)
+
+An opt-in (`FLEET_DASHBOARD_PORT`) read-only view over the exact same state
+`fleet_pool_status`/`fleet_status` expose, for a human watching a running server
+without going through an MCP client. Deliberately minimal:
+
+- Plain stdlib `http.server.ThreadingHTTPServer` running in a daemon thread — no new
+  required dependency, no ASGI framework. `GET /` serves a single self-contained HTML
+  page (inline CSS/JS, no CDN calls); `GET /api/status` serves the JSON snapshot the
+  page polls once a second.
+- Reads directly from the same `AppContext` the MCP tools use (`pool.status()`,
+  `registry.list()`, `scheduler.circuit_breaker.snapshot()`, `scheduler.list_operations()`,
+  `watches.status()`) — there's no separate state to keep in sync, and no IPC.
+- Runs on a different OS thread than the asyncio event loop the MCP stdio server and
+  scheduler run on. All the status-gathering calls it uses are synchronous, read-only,
+  and side-effect-free, so this is safe under CPython's GIL for a monitoring view; the
+  request handler catches and reports any exception as a 500 rather than taking the
+  thread down, since a rare read of in-flux state under concurrent mutation is an
+  acceptable tradeoff here — this is not a control plane, and there's no write path.
+- `Scheduler.list_operations()` is bounded by `max_operation_history` (default 500):
+  the scheduler tracks `FleetOperation` objects (one per `fleet_read`/`fleet_write`
+  call) in an insertion-ordered dict and prunes the oldest *completed* one whenever
+  the count exceeds the bound, so a long-running server's operation history — which
+  the dashboard's "Recent operations" panel reads from — doesn't grow forever.

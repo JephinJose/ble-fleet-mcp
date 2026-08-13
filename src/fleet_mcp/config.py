@@ -49,8 +49,13 @@ class Settings:
 
     log_level: str = "INFO"
 
+    dashboard_port: int | None = None
+    """Unset by default: the dashboard is opt-in, not an always-open port."""
+    dashboard_host: str = "127.0.0.1"
+
     @classmethod
     def from_env(cls) -> Settings:
+        dashboard_port_raw = os.environ.get("FLEET_DASHBOARD_PORT", "").strip()
         return cls(
             max_connections=_env_int("FLEET_MAX_CONNECTIONS", 4),
             allow_writes=_env_bool("FLEET_ALLOW_WRITES", False),
@@ -67,4 +72,6 @@ class Settings:
             trace_enabled=_env_bool("FLEET_TRACE_ENABLED", True),
             trace_path=Path(os.environ.get("FLEET_TRACE_PATH", ".fleet_mcp/traces/trace.jsonl")),
             log_level=os.environ.get("FLEET_LOG_LEVEL", "INFO").upper(),
+            dashboard_port=int(dashboard_port_raw) if dashboard_port_raw else None,
+            dashboard_host=os.environ.get("FLEET_DASHBOARD_HOST", "127.0.0.1"),
         )

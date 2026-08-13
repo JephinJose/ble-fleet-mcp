@@ -273,3 +273,30 @@ async def test_high_priority_dispatched_before_low_priority() -> None:
     assert "high1" in order[1:]
     assert order.index("high1") < order.index("low2")
     await sched.stop()
+
+
+@pytest.mark.asyncio
+async def test_operation_history_is_pruned_to_bound_memory() -> None:
+    """A long-running server must not accumulate a FleetOperation per fleet_read call
+    forever — completed operations beyond max_operation_history should be dropped,
+    oldest first, while any still-running operation is never pruned."""
+    transport = FakeTransport(max_concurrent=1)
+    transport.add_peripheral(FakePeripheral(address="d0", resources={"r": 1}))
+    pool = ConnectionPoolManager(transport, max_connections=1)
+    sched = Scheduler(pool, transport, device_timeout_s=1.0, max_operation_history=5)
+
+    op_ids = []
+    for _ in range(10):
+        op = await sched.submit(_devices(transport, "d0"), JobKind.READ, "r", timeout_s=2.0)
+        await _wait_done(op)
+        op_ids.append(op.op_id)
+
+    assert len(sched.list_operations()) == 5
+    # oldest 5 pruned, newest 5 retained
+    for op_id in op_ids[:5]:
+        assert sched.get_operation(op_id) is None
+    for op_id in op_ids[5:]:
+        assert sched.get_operation(op_id) is not None
+    # most-recently-submitted first
+    assert sched.list_operations()[0].op_id == op_ids[-1]
+    await sched.stop()

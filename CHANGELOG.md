@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - End-to-end test driving the real MCP server over a real stdio subprocess and real
   JSON-RPC framing (`tests/integration/test_mcp_stdio.py`), rather than only the
   in-process tool-call shortcut the rest of the suite uses.
+- Minimal, opt-in (`FLEET_DASHBOARD_PORT`) read-only web dashboard over the same
+  telemetry `fleet_pool_status`/`fleet_status` expose: live pool gauges, per-device
+  health, recent operations, and active watches. Stdlib `http.server`, no new
+  required dependency. `examples/simulated_fleet/dashboard_demo.py` demos it against
+  a simulated fleet.
+- `Scheduler.list_operations()`, and a bound (`max_operation_history`, default 500)
+  on how many completed operations the scheduler keeps in memory — previously
+  unbounded, a slow memory leak on a long-running server.
 
 ## [0.1.0] - 2026-08-13
 
