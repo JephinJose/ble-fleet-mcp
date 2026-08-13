@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Scheduler caught the builtin `TimeoutError` where `asyncio.wait_for()` raises
+  `asyncio.TimeoutError` — the same class on Python 3.11+, but a distinct,
+  silently-uncaught one on 3.10. Affected the scheduler, the MCP tool layer's
+  quick-wait, and the BLE transport's timeout handling.
+- `WatchManager.subscribe()`/`unsubscribe()` had a check-then-acquire race: two
+  concurrent watch calls for the same not-yet-watched device could each open their
+  own connection to it, leaking one. Now serialized under a lock.
+- A job that completed right as its operation's timeout fired could overwrite an
+  already-reported `timeout` result back to `success` after the caller had already
+  observed the operation as `timed_out`. First resolution now wins.
+- Removed two unused, never-wired-up exception classes (`PoolExhaustedError`,
+  `SafetyCriticalConfirmationRequired`).
+
+### Added
+
+- End-to-end test driving the real MCP server over a real stdio subprocess and real
+  JSON-RPC framing (`tests/integration/test_mcp_stdio.py`), rather than only the
+  in-process tool-call shortcut the rest of the suite uses.
+
 ## [0.1.0] - 2026-08-13
 
 ### Added
