@@ -206,6 +206,40 @@ async def test_write_rejected_is_not_retried_and_reported() -> None:
 
 
 @pytest.mark.asyncio
+async def test_already_connected_devices_batch_ahead_of_new_connections() -> None:
+    """Batching: jobs targeting already-connected devices are drained before jobs
+    that would require a new connection (and possibly an eviction) — even when the
+    new-connection job was queued first."""
+    order: list[str] = []
+
+    class RecordingTransport(FakeTransport):
+        async def read(self, conn, resource):  # type: ignore[override]
+            order.append(conn.device.address)
+            return await super().read(conn, resource)
+
+    transport = RecordingTransport(max_concurrent=2)
+    for addr in ("A", "B", "C"):
+        transport.add_peripheral(FakePeripheral(address=addr, resources={"r": 1}))
+    pool = ConnectionPoolManager(transport, max_connections=2)
+    sched = Scheduler(pool, transport, device_timeout_s=1.0)
+
+    # Pre-connect A and B (fills the cap=2 pool), then release them back to idle.
+    warmup = await sched.submit(_devices(transport, "A", "B"), JobKind.READ, "r", timeout_s=3.0)
+    await _wait_done(warmup)
+    assert pool.is_connected("A") and pool.is_connected("B")
+    order.clear()
+
+    # C is listed *first* (earliest created_at) but isn't connected; A and B are
+    # connected but listed after. Batching should still dispatch A and B first.
+    op = await sched.submit(_devices(transport, "C", "A", "B"), JobKind.READ, "r", timeout_s=3.0)
+    await _wait_done(op)
+
+    assert set(order[:2]) == {"A", "B"}, f"expected A and B dispatched first, got {order}"
+    assert order[2] == "C"
+    await sched.stop()
+
+
+@pytest.mark.asyncio
 async def test_high_priority_dispatched_before_low_priority() -> None:
     transport = FakeTransport(max_concurrent=1)
     order: list[str] = []
